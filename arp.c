@@ -8,6 +8,9 @@ struct ip_to_mac self_list[MAX_IF];
 
 int total_self_entries=0;
 struct sockaddr_in eth0_ip;
+int eth0_index;
+
+unsigned char eth0_mac[IF_HADDR]={};
 
 void arp_init()
 {
@@ -26,10 +29,15 @@ void arp_init()
 		printf("%s :%s", hwa->if_name, ((hwa->ip_alias) == IP_ALIAS) ? " (alias)\n" : "\n");
 		if(!strcmp(hwa->if_name,"eth0")||(hwa->ip_alias == IP_ALIAS))
 		{
-			eth0_ip= *(struct sockaddr_in*) hwa->ip_addr;
 			si= (struct sockaddr_in* )hwa->ip_addr;
 			self_list[total_self_entries].ip = si->sin_addr.s_addr;
 			memcpy(self_list[total_self_entries].mac,hwa->if_haddr,IF_HADDR);
+			if(!(strcmp(hwa->if_name,"eth0")))
+			{
+				eth0_index = hwa->if_index;
+				eth0_ip= *(struct sockaddr_in*) hwa->ip_addr;
+				memcpy(eth0_mac,hwa->if_haddr,IF_HADDR);
+			}
 			total_self_entries++;
 	
 		}
@@ -84,7 +92,7 @@ int main()
 
 	for(i=0;i<total_self_entries;i++)
 	{
-		printf("ip:%s mac: ",(char *)inet_ntoa(self_list[i].ip));
+		printf("ip:%s mac: ",(char *)inet_ntoa(*(struct in_addr*)(&self_list[i].ip)));
 	
 		for(j=0;j<IF_HADDR;j++)
 		{
@@ -151,7 +159,7 @@ int main()
                 }
                 if(FD_ISSET(domainfd,&rset))
                 {
-			connfd = accept(domainfd,&cliaddr,&clilen);
+			connfd = accept(domainfd,(struct sockaddr *)&cliaddr,&clilen);
 			if(errno==EINTR)
 				continue;
 			if(connfd<0)
@@ -159,7 +167,7 @@ int main()
 				perror("accept error:");
 				continue;
 			}	
-                        process_app_req(sockfd,connfd);
+                        process_app_con(sockfd,connfd);
                 }
         }
  
