@@ -12,13 +12,16 @@
 #include <sys/un.h>
 #include <errno.h>
 #include <netdb.h>
-
+#include <netinet/ip_icmp.h>
+#include <linux/if_ether.h>
 #include "common_lib.h"
+
 #define MAX_PKT 1024
 #define TOUR_K117 177
 #define TOUR_K2160 2160
 #define TOUR_ID  1
 
+#define IF_HADDR 6
 
 #ifdef ARP_DEBUG
 #define dprintf(fmt, args...) printf(fmt, ##args)
@@ -27,6 +30,7 @@
 #endif
 
 
+extern unsigned char eth0_mac[IF_HADDR];
 
 extern struct in_addr eth0_ip;
 
@@ -43,7 +47,10 @@ char * get_name(unsigned long ip);
 
 int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr);
 
-int recv_process_tour_packet(int sockrt);
+int recv_process_tour_packet(int sockrt,int sockicmp);
 
 int send_tour_packet(int sockrt, unsigned long src_ip,unsigned long dest_ip , struct tour_header* th,void *buff, int len);
+
+int recv_echo_reply(int sockpg);
+
 #endif

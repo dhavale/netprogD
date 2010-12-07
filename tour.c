@@ -25,15 +25,19 @@ int main(int argc,char*argv[])
 	char source_name[20] = {};
 	
 	int sockrt,one=1,payload_len,i;
+	int sockicmp, sockpg,maxfdp;
+
 	const int *val =&one;
 
 	struct tour_header th;
-
+	fd_set rset;
 
 	memset(&th,0,sizeof(th));
 	
 	memset(&IPaddr,0,sizeof(IPaddr));	
 	memset(&retaddr,0,sizeof(retaddr));
+
+	tour_init();
 
 	gethostname(source_name,sizeof(source_name));
 
@@ -53,9 +57,25 @@ int main(int argc,char*argv[])
 	
 	if(sockrt<0)
 	{
-		perror("socket failed:");
+		perror("sockrt failed:");
 		exit(EXIT_FAILURE);
 	}	
+
+	sockpg = socket(PF_INET,SOCK_RAW,IPPROTO_ICMP);
+
+	if(sockpg<0){
+
+		perror("sockpg failed:");
+		exit(EXIT_FAILURE);
+	}
+
+	sockicmp= socket(PF_PACKET,SOCK_RAW,ETH_P_IP);
+		
+	if(sockicmp<0){
+
+		perror("sockicmp failed:");
+		exit(EXIT_FAILURE);
+	}
 	
 	if(setsockopt(sockrt,IPPROTO_IP,IP_HDRINCL,val,sizeof(one))<0)
 	{
@@ -94,9 +114,27 @@ int main(int argc,char*argv[])
 		
 	}
 
+	FD_ZERO(&rset);
+
 	while(1)
 	{
-		recv_process_tour_packet(sockrt);
+		FD_SET(sockpg,&rset);
+	
+		FD_SET(sockrt,&rset);
+		if(sockpg<sockrt)
+			maxfdp = sockrt+1;
+		else
+			maxfdp = sockpg+1;
+
+		select(maxfdp,&rset,NULL,NULL,NULL);
+		if(FD_ISSET(sockrt,&rset))
+		{	
+			recv_process_tour_packet(sockrt,sockicmp);
+		}
+		if(FD_ISSET(sockpg,&rset))
+		{
+			recv_echo_reply(sockpg);
+		}
 	}
 
 /*

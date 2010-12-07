@@ -24,7 +24,7 @@ prhwaddrs.o: prhwaddrs.c
 	${CC} ${FLAGS} -c prhwaddrs.c
 
 tour: tour_lib.o tour.o
-	${CC} -o tour tour_lib.o tour.o ${LIBS}
+	${CC} -o tour tour_lib.o tour.o get_hw_addrs.o ${LIBS}
 
 tour.o:  tour.c
 	${CC} ${FLAGS} -c tour.c

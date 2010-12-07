@@ -19,7 +19,6 @@
 #define	IP_ALIAS  	 1	/* hwa_addr is an alias */
 #define ETH_HDRLEN	14
 
-extern struct sockaddr_in eth0_ip;	
 
 extern	int total_if_count;
 
