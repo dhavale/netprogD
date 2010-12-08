@@ -9,11 +9,12 @@
 
 struct in_addr eth0_ip;
 
+struct ip_mreq imreq;
+
 int main(int argc,char*argv[])
 {
 	
 	struct hostent *he;
-	struct sockaddr_un cliaddr,servaddr;
 	struct in_addr *req=NULL;
 	struct hwaddr retaddr;
 	char client_name[52]={};
@@ -24,16 +25,31 @@ int main(int argc,char*argv[])
 	struct hostent *hp;
 	char source_name[20] = {};
 	
+	struct timeval tv1;
+	int lsockmc;	
 	int sockrt,one=1,payload_len,i;
 	int sockicmp, sockpg,maxfdp;
 
 	const int *val =&one;
+	int tsockfd;
+
+	struct sockaddr_in multiaddr;
+	socklen_t multilen = sizeof(multiaddr);
 
 	struct tour_header th;
 	fd_set rset;
+	void *recvmulti = malloc(200);
+	void *multimsg = malloc(200);
+	u_int yes=1;
+	struct in_addr iaddr;
+	struct sockaddr_in recvaddr;
+	struct sockaddr_in servaddr;
 
+	memset(&servaddr,0,sizeof(servaddr));
+	memset(&recvaddr,0,sizeof(recvaddr));	
+	memset(&multiaddr,0,sizeof(multiaddr));	
 	memset(&th,0,sizeof(th));
-	
+	memset(&imreq,0,sizeof(imreq));	
 	memset(&IPaddr,0,sizeof(IPaddr));	
 	memset(&retaddr,0,sizeof(retaddr));
 
@@ -82,6 +98,41 @@ int main(int argc,char*argv[])
 		perror("setsockopt error:");
 		exit(EXIT_FAILURE);
 	}		
+
+	/*open a multicast socket*/
+
+	multiaddr.sin_family = AF_INET;
+	multiaddr.sin_port = htons(MULTICAST_PORT);
+	multiaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+
+	lsockmc = socket(AF_INET,SOCK_DGRAM,0);
+	if(lsockmc<0)
+	{
+		perror("lsock multicast:");
+		exit(EXIT_FAILURE);
+	}
+	if(setsockopt(lsockmc,SOL_SOCKET,SO_REUSEADDR,&yes,sizeof(yes))<0)
+	{
+		perror("setsockopt reuseaddr lsockmc");
+		exit(EXIT_FAILURE);
+	}
+	if(bind(lsockmc,(struct sockaddr*)&multiaddr,multilen)<0)
+	{
+		perror("bind:");
+		exit(EXIT_FAILURE);
+	}	
+
+#if 0 
+
+	iaddr.s_addr = INADDR_ANY;
+	if(setsockopt(sockmc,IPPROTO_IP,IP_MULTICAST_IF,&iaddr,sizeof(iaddr))<0)
+	{
+		perror("setsockopt iaddr:");
+		exit(EXIT_FAILURE);
+	}
+
+#endif
 	if(argc>1)
 	{
 		payload_len = (argc-1)* sizeof(unsigned long);
@@ -104,39 +155,132 @@ int main(int argc,char*argv[])
 			
 			temp_ip = (struct in_addr*)hp->h_addr;
 			payload[i] = temp_ip->s_addr;
-		}		
+		}	
+			/*server, starts from you, do multicast setup*/
+			imreq.imr_multiaddr.s_addr = inet_addr(MULTICAST_IP);
+			imreq.imr_interface.s_addr = htonl(INADDR_ANY);
+ 	
+			if(setsockopt(lsockmc,IPPROTO_IP,IP_ADD_MEMBERSHIP,&imreq,sizeof(imreq))<0)
+			{
+				perror("multicast sockopt:");
+				exit(EXIT_FAILURE);
+			}
 		/**fill in tour header*/
+			
 			th.source = eth0_ip.s_addr;
 			th.index_in_tour = 1;
 			th.total_nodes =argc-1;
-
+			th.multicast = imreq.imr_multiaddr.s_addr;
+			th.mport = htons(MULTICAST_PORT);
 			send_tour_packet(sockrt,th.source,payload[0],&th,payload,payload_len);
 		
 	}
 
 	FD_ZERO(&rset);
-
+	int count=total_replies -1;
+	time_t ticks;
 	while(1)
 	{
 		FD_SET(sockpg,&rset);
 	
 		FD_SET(sockrt,&rset);
+		
+		FD_SET(lsockmc,&rset);
+		
+		tv1.tv_sec = 1;
+		tv1.tv_usec = 0;
+	
+		memset(recvmulti,0,200);
+		multilen = sizeof(recvaddr);
+
 		if(sockpg<sockrt)
 			maxfdp = sockrt+1;
 		else
 			maxfdp = sockpg+1;
 
-		select(maxfdp,&rset,NULL,NULL,NULL);
+		if(maxfdp<=lsockmc)
+			maxfdp = lsockmc+1;
+		
+		if(joined && (time(NULL)>ticks))
+		{
+			count=total_replies;
+			ticks = time(NULL);
+			send_echo_req(sockicmp,tour_source);
+		}
+		select(maxfdp,&rset,NULL,NULL,&tv1);
 		if(FD_ISSET(sockrt,&rset))
 		{	
-			recv_process_tour_packet(sockrt,sockicmp);
+			recv_process_tour_packet(sockrt,sockicmp,lsockmc,sockpg);
 		}
 		if(FD_ISSET(sockpg,&rset))
 		{
 			recv_echo_reply(sockpg);
 		}
+		if(FD_ISSET(lsockmc,&rset))
+		{
+			recvaddr.sin_family = AF_INET;
+			recvaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+			recvaddr.sin_port  = htons(MULTICAST_PORT);
+
+			if(recvfrom(lsockmc,recvmulti,200,0,(struct sockaddr*)&recvaddr,&multilen)<0)
+			{
+				perror("recvfrom multicast:");
+				exit(EXIT_FAILURE);
+			}
+			printf("Node %s. Received:%s\n",get_name(eth0_ip.s_addr),(char*)recvmulti);
+
+			tsockfd = socket(AF_INET,SOCK_DGRAM,0);
+			if(tsockfd<0)
+			{
+				perror("tsockfd:");
+				exit(EXIT_FAILURE);
+			}
+			servaddr.sin_family = AF_INET;
+			servaddr.sin_port = htons(MULTICAST_PORT);
+			servaddr.sin_addr.s_addr = inet_addr(MULTICAST_IP);
+			
+			sprintf(multimsg,"Node %s. I am a member of the group.",get_name(eth0_ip.s_addr));
+			if(sendto(tsockfd,multimsg,strlen(multimsg)+1,0,(struct sockaddr*)&servaddr,sizeof(servaddr))<=0)
+			{
+				perror("sendto multicast failed:");
+			}
+			printf("Node %s. Sending: %s\n",get_name(eth0_ip.s_addr),(char*)multimsg);
+
+			close(tsockfd);
+			break;	
+		}
 	}
 
+	FD_ZERO(&rset);
+	while(1)
+	{
+		FD_SET(lsockmc,&rset);
+		memset(recvmulti,0,200);	
+		tv1.tv_sec=5;
+		tv1.tv_usec = 0;
+		
+		select(lsockmc+1,&rset,NULL,NULL,&tv1);
+
+		if(FD_ISSET(lsockmc,&rset))
+		{
+			recvaddr.sin_family = AF_INET;
+			recvaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+			recvaddr.sin_port  = htons(MULTICAST_PORT);
+
+			if(recvfrom(lsockmc,recvmulti,200,0,(struct sockaddr*)&recvaddr,&multilen)<0)
+			{
+				perror("recvfrom multicast:");
+				exit(EXIT_FAILURE);
+			}
+			printf("Node %s. Received:%s\n",get_name(eth0_ip.s_addr),(char*)recvmulti);
+	
+		}
+		else{
+			printf("Gracefully exiting tour application..\n");
+			break;
+		}
+		
+	}
 /*
 	he=gethostbyname(argv[1]);
 	if(he==NULL)

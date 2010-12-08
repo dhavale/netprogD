@@ -62,7 +62,7 @@ struct arp_cache_entry * next;
 extern cache_entry * cache_head;
 
 
-int recv_process_pf_packet(int sockfd,int connfd);
+int recv_process_pf_packet(int sockfd);
 
 int process_app_conn(int sockfd,int connfd);
 

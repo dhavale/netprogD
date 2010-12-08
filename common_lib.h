@@ -2,7 +2,7 @@
 #define _COMMON_LIB_H
 
 
-#define UNIX_D_PATH "arp2159.dg"
+#define UNIX_D_PATH "/tmp/arp2159.dg"
 
 struct hwaddr{
 int sll_ifindex;

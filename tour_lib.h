@@ -21,6 +21,9 @@
 #define TOUR_K2160 2160
 #define TOUR_ID  1
 
+#define MULTICAST_PORT 9877
+#define MULTICAST_IP "225.0.0.37"
+
 #define IF_HADDR 6
 
 #ifdef ARP_DEBUG
@@ -31,23 +34,27 @@
 
 
 extern unsigned char eth0_mac[IF_HADDR];
+extern unsigned long tour_source;
 
 extern struct in_addr eth0_ip;
+extern int joined;
 
 struct tour_header{
 unsigned long source;
 unsigned long multicast;
-int mport;
 int index_in_tour;
 int total_nodes;
+short mport;
 };
+
+extern int total_replies;
 
 char * get_name(unsigned long ip);
 
 
 int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr);
 
-int recv_process_tour_packet(int sockrt,int sockicmp);
+int recv_process_tour_packet(int sockrt,int sockicmp,int sockmc,int sockpg);
 
 int send_tour_packet(int sockrt, unsigned long src_ip,unsigned long dest_ip , struct tour_header* th,void *buff, int len);
 

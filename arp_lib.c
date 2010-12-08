@@ -110,7 +110,7 @@ int send_arp_packet(int sockfd,unsigned char *dest_mac, t_arp *arp_packet)
 }
 
 
-int recv_process_pf_packet(int sockfd,int connfd)
+int recv_process_pf_packet(int sockfd)
 {
         void* recv_buffer = (void*)malloc(ETH_HDRLEN+sizeof(t_arp)); /*Buffer for ethernet frame*/
         struct sockaddr_ll from;
@@ -136,7 +136,7 @@ int recv_process_pf_packet(int sockfd,int connfd)
         switch(arp_packet->type)
         {
                 case AREQ:
-                        process_AREQ(sockfd,connfd,src_mac,from.sll_ifindex,arp_packet);
+                        process_AREQ(sockfd,src_mac,from.sll_ifindex,arp_packet);
 
                 break;
                 case AREP:
@@ -144,7 +144,7 @@ int recv_process_pf_packet(int sockfd,int connfd)
                         dprintf("RREP from %x:%x:%x:%x:%x:%x to me at %x:%x:%x:%x:%x:%x \n",
                                 src_mac[0],src_mac[1],src_mac[2],src_mac[3],src_mac[4],src_mac[5],
                               dest_mac[0],dest_mac[1],dest_mac[2],dest_mac[3],dest_mac[4],dest_mac[5]);
-                        process_AREP(sockfd,connfd,src_mac,from.sll_ifindex,arp_packet);
+                        process_AREP(sockfd,src_mac,from.sll_ifindex,arp_packet);
                 break;
                 default:
                         printf("Garbage packet on ARP.. dropping\n");
@@ -160,7 +160,7 @@ int recv_process_pf_packet(int sockfd,int connfd)
 
 }
 
-int  process_AREQ(int sockfd,int connfd,unsigned char *src_mac,int from_index,t_arp* arp_packet)
+int  process_AREQ(int sockfd,unsigned char *src_mac,int from_index,t_arp* arp_packet)
 {
 	/*
 		1. check if UID matches, drop otherwise
@@ -185,7 +185,7 @@ int  process_AREQ(int sockfd,int connfd,unsigned char *src_mac,int from_index,t_
 
 	if(entry)
 	{	/*update source information if necessary*/
-		update_cache_entry(entry,src_ip,eth0_index,arp_packet->src_mac,arp_packet->hatype,connfd);
+		update_cache_entry(entry,src_ip,eth0_index,arp_packet->src_mac,arp_packet->hatype,-1);
 	}
 
 	for(i=0;i<total_self_entries;i++)
@@ -213,7 +213,7 @@ int  process_AREQ(int sockfd,int connfd,unsigned char *src_mac,int from_index,t_
 
 
 
-int process_AREP(int sockfd,int connfd,unsigned char* src_mac,int from_index,t_arp* arp_packet)
+int process_AREP(int sockfd,unsigned char* src_mac,int from_index,t_arp* arp_packet)
 {
 	/*
 		1. check if UID matches, drop otherwise.
@@ -223,8 +223,10 @@ int process_AREP(int sockfd,int connfd,unsigned char* src_mac,int from_index,t_a
 	*/
 	cache_entry * entry = NULL;
 	struct hwaddr retaddr;
-	memset(&retaddr,0,sizeof(retaddr));
+	int connfd;
 
+	memset(&retaddr,0,sizeof(retaddr));
+	
 	if(arp_packet->proto_id!=ARP_9512K)
 	{
 		printf("somebody with same proto field trying to mess up X-( dropping..\n");
@@ -235,10 +237,11 @@ int process_AREP(int sockfd,int connfd,unsigned char* src_mac,int from_index,t_a
 
 	if(entry)
 	{
-		update_cache_entry(entry,arp_packet->src_ip,eth0_index,arp_packet->src_mac,arp_packet->hatype,connfd);
+		update_cache_entry(entry,arp_packet->src_ip,eth0_index,arp_packet->src_mac,arp_packet->hatype,-1);
 		retaddr.sll_ifindex = entry->sll_ifindex;
 		retaddr.sll_hatype = entry->sll_hatype;
 		retaddr.sll_halen = IF_HADDR;
+		connfd = entry->connfd;
 		memcpy(retaddr.sll_addr,entry->mac,IF_HADDR);
 
 		if(write(connfd,&retaddr,sizeof(retaddr))<=0)
@@ -286,27 +289,27 @@ int process_app_con(int sockfd,int connfd)
 	                select(maxfdp,&rset,NULL,NULL,NULL);
         	        if(FD_ISSET(sockfd,&rset))
   	                 {
-        	                recv_process_pf_packet(sockfd,connfd);
+        	                recv_process_pf_packet(sockfd);
        		         }
        		         if(FD_ISSET(connfd,&rset))
                 	{
                         	len= read(connfd,buff,sizeof(buff));
 				if(len<=0)
 				{
-					perror("read: ");
+					perror("proc appcon 2ndselect read: ");
 					close(connfd);
 					//break;
 				}
 
-				printf("read %d bytes",len);
+			//	printf("read %d bytes",len);
 				request_ip = *(unsigned long *)(buff);
-				printf("%lx",request_ip);
+			//	printf("%lx",request_ip);
 
 				/*see if request ip is in cache*/
 				entry=search_arp(request_ip);
 				if(entry!=NULL)
 				{
-					assert(entry->incomplete==0);
+					//assert(entry->incomplete==0);
 					retaddr.sll_ifindex = entry->sll_ifindex;
 					retaddr.sll_hatype = entry->sll_hatype;
 					retaddr.sll_halen = IF_HADDR;
@@ -361,7 +364,7 @@ int process_app_con(int sockfd,int connfd)
 					}
 					if(FD_ISSET(sockfd,&rset))
 	        		        {/*drop AREP if no entry found.*/
-	                		        recv_process_pf_packet(sockfd,connfd);
+	                		        recv_process_pf_packet(sockfd);
 	               			}
 					
 									
@@ -413,7 +416,7 @@ int update_cache_entry(cache_entry *entry,unsigned long ip, int if_index,unsigne
 		entry->sll_ifindex = if_index;
 		memcpy(entry->mac,mac,IF_HADDR);
 		entry->sll_hatype = sll_hatype;
-		entry->connfd = connfd;
+//		entry->connfd = connfd;
 		entry->incomplete=0;
 	}
 

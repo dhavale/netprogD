@@ -155,7 +155,7 @@ int main()
                 if(FD_ISSET(sockfd,&rset))
                 {
 			
-                        recv_process_pf_packet(sockfd,domainfd);
+                        recv_process_pf_packet(sockfd);
                 }
                 if(FD_ISSET(domainfd,&rset))
                 {

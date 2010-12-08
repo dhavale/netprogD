@@ -7,7 +7,9 @@
 unsigned char eth0_mac[IF_HADDR];
 int eth0_index;
 short int icmp_sequence=0;
-
+int joined=0;
+unsigned long tour_source;
+int total_replies=0;
 
 unsigned short checkSum(unsigned char *buff, int iSize);
 
@@ -24,14 +26,21 @@ int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 {
 	int ret=0;
 	struct sockaddr_un servaddr;	
-	int sockfd;
+	int sockfd,i;
 	ssize_t len=0;
 	struct sockaddr_in *in;
+	fd_set rset;
+	struct timeval tv;
+	
+	in = (struct sockaddr_in *)IPaddr;
+	printf("requesting HW address for %s \n",inet_ntoa(in->sin_addr));
+	
 	sockfd = socket(AF_LOCAL, SOCK_STREAM, 0);
         if(sockfd<0)
         {
                 perror("unable to create socket:");
-                exit(EXIT_FAILURE);
+                ret=-1;
+		goto quit;
         }
 
 	bzero(&servaddr, sizeof(servaddr)); /* servaddr address for us */
@@ -41,25 +50,55 @@ int areq(struct sockaddr *IPaddr, socklen_t sockaddrlen, struct hwaddr *HWaddr)
 	if(connect(sockfd, (struct sockaddr *)&servaddr,sizeof(servaddr))<0)
 	{
 		perror("Connect error..:");
-		return -1;
+		ret=-1;
+		goto quit;
 	}
 
-	in = (struct sockaddr_in *)IPaddr;
+
+	
 	len = write(sockfd,&in->sin_addr,4);
 	if(len!=4)
 	{
 		perror("write failed:");
-		return -1;
+		ret=-1;
+		goto quit;
 	}
+	
+	FD_ZERO(&rset);
 
-	len=read(sockfd,HWaddr,sizeof(struct hwaddr));
-	if(len<= 0)
+	FD_SET(sockfd,&rset);
+
+	tv.tv_sec=5;
+	tv.tv_usec=0;
+
+	select(sockfd+1,&rset,NULL,NULL,&tv);
+	
+	if(FD_ISSET(sockfd,&rset))
 	{
-		printf("len=%d sizeof=%d\n",len,sizeof(struct hwaddr));
-		perror("read failed:");
-		return -1;	
-	}
+				
+		len=read(sockfd,HWaddr,sizeof(struct hwaddr));
+		if(len<= 0)
+		{
+			printf("len=%d sizeof=%d\n",len,sizeof(struct hwaddr));
+			perror("read failed:");
+			ret= -1;	
+		}
+		printf("HW address for %s is: ",inet_ntoa(in->sin_addr));
 
+		for(i = 0;i < 6 ; i++)
+		{
+			printf("%.2x:",HWaddr->sll_addr[i]);
+		} 
+		printf("\b \n");
+	}
+	else {
+
+		printf("areq() timed out.\n");
+		ret= -1;	
+
+	}
+quit:
+	close(sockfd);
 	return ret;
 }
 
@@ -111,7 +150,7 @@ int send_tour_packet(int sockrt, unsigned long src_ip,unsigned long dest_ip , st
 
 }
 
-int recv_process_tour_packet(int sockrt,int sockicmp)
+int recv_process_tour_packet(int sockrt,int sockicmp,int lsockmc,int sockpg)
 {
 	void * recvbuff = malloc(MAX_PKT);
 	struct sockaddr_in cliaddr;
@@ -119,9 +158,20 @@ int recv_process_tour_packet(int sockrt,int sockicmp)
 	int ret=0,payload_len=0;
 	struct tour_header *th;
 	unsigned long *data;
+	struct ip_mreq imreq;
+	struct sockaddr_in multiaddr;
+//	struct in_addr iaddr;
+	int tsockfd,count;
+	fd_set rset;
+	struct timeval tv;
+
+//	memset(&iadrr,0,sizeof(iaddr));	
+	memset(&multiaddr,0,sizeof(multiaddr));
+	memset(&imreq,0,sizeof(imreq));
 	memset(&cliaddr,0,sizeof(struct sockaddr_in));	
 	memset(recvbuff,0,MAX_PKT);
-	
+
+	char multimsg[200] = {};
 	unsigned long next_hop;
 
 	ret= recvfrom(sockrt,recvbuff,MAX_PKT, 0,(struct sockaddr*)&cliaddr,&clilen);
@@ -141,15 +191,101 @@ int recv_process_tour_packet(int sockrt,int sockicmp)
 
 	/*start pinging to source node,if have not done before*/
 	/*register to multicast if havent done before*/
-	send_echo_req(sockicmp,th->source);
 
 	printf("index=%d total=%d\n",th->index_in_tour,th->total_nodes);
+	if(!joined)
+	printf("joining multicast grp %s port %d\n",inet_ntoa(*(struct in_addr*)&th->multicast),ntohs(th->mport));
 
+	else{
+	printf("already joined multicast grp %s port %d\n",inet_ntoa(*(struct in_addr*)&th->multicast),ntohs(th->mport));
+
+
+}
+
+		if(!joined)
+	{
+		
+		imreq.imr_multiaddr.s_addr = inet_addr(MULTICAST_IP);
+		imreq.imr_interface.s_addr = htonl(INADDR_ANY);
+		if(setsockopt(lsockmc,IPPROTO_IP,IP_ADD_MEMBERSHIP,(const void*)&imreq,sizeof(imreq))<0)
+		{
+			perror("error joining multicast losckmcrecv:");
+			exit(EXIT_FAILURE);
+		}
+		tour_source = th->source;
+		joined=1;
+		
+		send_echo_req(sockicmp,th->source);
+		/*start pinging*/
+	}	
+
+
+ 
 	if(th->index_in_tour == (th->total_nodes))
 	{
+
 		/*tour ends at you*/
+#if 0
+	if(!joined)
+	{
+		
+		imreq.imr_multiaddr.s_addr = inet_addr(MULTICAST_IP);
+		imreq.imr_interface.s_addr = htonl(INADDR_ANY);
+		if(setsockopt(lsockmc,IPPROTO_IP,IP_ADD_MEMBERSHIP,(const void*)&imreq,sizeof(imreq))<0)
+		{
+			perror("error joining multicast losckmcrecv:");
+			exit(EXIT_FAILURE);
+		}
+		tour_source = th->source;
+		joined=1;
+		
+		send_echo_req(sockicmp,th->source);
+		/*start pinging*/
+	}
+		/*wait for 5 sec, pinging*/
+
+		FD_ZERO(&rset);
+		count= total_replies;
+		while((total_replies-count)<5)
+		{
+			FD_SET(sockpg+1,&rset);
+			tv.tv_sec=5;
+			tv.tv_usec = 0;
+			select(sockpg,&rset,NULL,NULL,&tv);
+			if(FD_ISSET(sockpg,&rset))
+			{
+				recv_echo_reply(sockpg);
+				
+				send_echo_req(sockicmp,th->source);
+			}
+			else{
+				break;
+			}
+		}	
+#endif
+
 		printf("%s: I am the last node\n",(char *)get_name(eth0_ip.s_addr));
 		ret=0;
+		sprintf(multimsg,"This is node %s. Tour has ended. Group memebers please identify yourslef",get_name(eth0_ip.s_addr));
+		multiaddr.sin_family = AF_INET;
+		multiaddr.sin_port = htons(MULTICAST_PORT);
+		multiaddr.sin_addr.s_addr = inet_addr(MULTICAST_IP);
+	
+//		iaddr.s_addr = INADDR_ANY;
+
+		tsockfd = socket(AF_INET,SOCK_DGRAM,0);
+		if(tsockfd<0)
+		{
+			perror("tsockfd:");
+			exit(EXIT_FAILURE);
+		}
+		if(sendto(tsockfd,multimsg,strlen(multimsg)+1,0,(struct sockaddr*)&multiaddr,sizeof(multiaddr))<=0)
+		{
+			perror("sendto multicast failed:");
+		}
+		close(tsockfd);
+
+		printf("Node %s. Sending: %s\n",get_name(eth0_ip.s_addr),multimsg);
 	}		
 	else{
 		
@@ -166,7 +302,6 @@ int recv_process_tour_packet(int sockrt,int sockicmp)
 		/*send tour packet to next_hop.*/
 			
 	}
-	
 	free(recvbuff);
 
 	return ret;		
@@ -405,7 +540,7 @@ int recv_echo_reply(int sockpg)
 	icmph = (struct icmp *)icmphead;				
 
 	data = icmphead + sizeof(struct icmp);
-	printf("icmp id n: %d h:%d \n",icmph->icmp_id,ntohs(icmph->icmp_id));
+	//printf("icmp id n: %d h:%d \n",icmph->icmp_id,ntohs(icmph->icmp_id));
 
 	if(ntohs(icmph->icmp_id)==(TOUR_K2160))
 	{
@@ -413,7 +548,10 @@ int recv_echo_reply(int sockpg)
 		if(icmph->icmp_type==8)
 			printf("echo request");
 		else if(icmph->icmp_type==0)
+		{
 			printf("echo reply");
+			total_replies++;
+		}
 
 		printf(" from: %s ",get_name(iph->ip_src.s_addr));
 		printf(" seq=%d data=%s\n",ntohs(icmph->icmp_seq),data);	
