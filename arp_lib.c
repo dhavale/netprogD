@@ -173,7 +173,8 @@ int  process_AREQ(int sockfd,unsigned char *src_mac,int from_index,t_arp* arp_pa
 	unsigned long src_ip = arp_packet->src_ip;
 	t_arp reply;
 	memset(&reply,0,sizeof(reply));
-	int i=0;
+	int i=0,j=0;
+	unsigned char ch;
 
 	if(arp_packet->proto_id!=ARP_9512K)
 	{
@@ -197,6 +198,7 @@ int  process_AREQ(int sockfd,unsigned char *src_mac,int from_index,t_arp* arp_pa
 	if(i<total_self_entries)
 	{
 		/*you are the dest, send AREP*/
+
 		reply.type = AREP;
 		reply.proto_id = ARP_9512K;
 		reply.hatype = 1;
@@ -204,7 +206,26 @@ int  process_AREQ(int sockfd,unsigned char *src_mac,int from_index,t_arp* arp_pa
 		reply.src_ip = self_list[i].ip;
 		memcpy(reply.dest_mac,arp_packet->src_mac,IF_HADDR);
 		reply.dest_ip = arp_packet->src_ip;
-		
+
+		printf("ARP at node %s: recieved AREQ frame from",get_name(arp_packet->dest_ip));
+		printf(" %s",get_name(arp_packet->src_ip));
+
+        	printf("src mac: ");
+	        for(j=0;j<6;j++)
+        	{
+        	   ch=arp_packet->src_mac[j];
+                	printf("%.2x:",ch);
+        	}
+		printf("\b ");
+	        printf("  dest mac: ");
+
+        	for(j=0;j<6;j++)
+        	{
+                	ch=arp_packet->dest_mac[j];
+	                printf("%.2x:",ch);
+        	}	
+		printf("\b \n");
+	
 		send_arp_packet(sockfd, reply.dest_mac, &reply);
 	}
 
@@ -223,9 +244,28 @@ int process_AREP(int sockfd,unsigned char* src_mac,int from_index,t_arp* arp_pac
 	*/
 	cache_entry * entry = NULL;
 	struct hwaddr retaddr;
-	int connfd;
+	int connfd,j;
+	unsigned char ch;
 
 	memset(&retaddr,0,sizeof(retaddr));
+	printf("ARP at node %s: recieved AREP frame from",get_name(arp_packet->dest_ip));
+	printf(" %s",get_name(arp_packet->src_ip));
+
+        printf("src mac: ");
+        for(j=0;j<6;j++)
+        {
+           ch=arp_packet->src_mac[j];
+                printf("%.2x:",ch);
+        }
+	printf("\b ");
+        printf("  dest mac: ");
+
+        for(j=0;j<6;j++)
+        {
+                ch=arp_packet->dest_mac[j];
+                printf("%.2x:",ch);
+        }
+	printf("\b \n");	
 	
 	if(arp_packet->proto_id!=ARP_9512K)
 	{
@@ -356,7 +396,7 @@ int process_app_con(int sockfd,int connfd)
 						len=read(connfd,buff,sizeof(buff));
 						if(len<=0)
 						{
-							printf("FIN on connfd..");
+							dprintf("FIN on connfd..");
 							delete_cache_entry(request_ip);
 							//break;
 						}		
@@ -397,7 +437,7 @@ int add_cache_entry(unsigned long ip, int if_index,unsigned char *mac,unsigned s
 	entry->next= cache_head;
 	cache_head= entry;
 	
-	printf("added ip: %s\n",(char *)inet_ntoa(*(struct in_addr*)&ip));
+	dprintf("added ip: %s\n",(char *)inet_ntoa(*(struct in_addr*)&ip));
 	return 0;
 
 }
@@ -408,7 +448,7 @@ int update_cache_entry(cache_entry *entry,unsigned long ip, int if_index,unsigne
 
 	if(entry->ip!=ip)
 	{
-		printf("Bad entry passed to %s",__FUNCTION__);
+		dprintf("Bad entry passed to %s",__FUNCTION__);
 		return -1;
 	}
 	else {
@@ -420,7 +460,7 @@ int update_cache_entry(cache_entry *entry,unsigned long ip, int if_index,unsigne
 		entry->incomplete=0;
 	}
 
-	printf("updated ip: %s\n",(char*)inet_ntoa(*(struct in_addr*)&ip));
+	dprintf("updated ip: %s\n",(char*)inet_ntoa(*(struct in_addr*)&ip));
 	return 0;
 }
 
@@ -466,6 +506,6 @@ int delete_cache_entry(unsigned long delete_ip)
 		prev->next = node->next;
 		free(node);	
 	}
-	printf("deleted ip: %s\n",(char*)inet_ntoa(*(struct in_addr*)&delete_ip));	
+	dprintf("deleted ip: %s\n",(char*)inet_ntoa(*(struct in_addr*)&delete_ip));	
 	return 0;
 }

@@ -57,7 +57,7 @@ int main(int argc,char*argv[])
 
 	gethostname(source_name,sizeof(source_name));
 
-	printf("source: %s\n",source_name);	
+	dprintf("source: %s\n",source_name);	
 		
 	hp = gethostbyname(source_name);
 
@@ -143,7 +143,7 @@ int main(int argc,char*argv[])
 	
 		for(i=0;i<argc-1;i++)
 		{
-			printf("node %d : %s\n",i,argv[i+1]);
+			dprintf("node %d : %s\n",i,argv[i+1]);
 
 			hp = gethostbyname(argv[i+1]);
 			

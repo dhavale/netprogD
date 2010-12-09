@@ -26,7 +26,7 @@
 
 #define IF_HADDR 6
 
-#ifdef ARP_DEBUG
+#ifdef TOUR_DEBUG
 #define dprintf(fmt, args...) printf(fmt, ##args)
 #else
 #define dprintf(fmt, args...)
